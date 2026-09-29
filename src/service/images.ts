@@ -8,6 +8,10 @@ import { Store } from "./db.js";
 
 const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
+export function imageDirectory(dataDir: string, projectId: string | null): string {
+  return join(dataDir, "images", projectId ?? "_standalone");
+}
+
 export function reference(path: string): { dataUrl: string; mimeType: string; width?: number; height?: number } {
   const info = statSync(path);
   if (!info.isFile() || info.size > 20_000_000) throw new Error("参考图须为小于 20 MB 的本地文件");
@@ -30,9 +34,9 @@ export class ImageQueue {
     queueMicrotask(() => { void this.pump(); });
   }
 
-  enqueue(projectId: string, prompts: string[], inputs: string[], maskData?: string, reuseMaskPath?: string,
+  enqueue(projectId: string | null, prompts: string[], inputs: string[], maskData?: string, reuseMaskPath?: string,
     runId: string | null = null, metadata?: Pick<ImageJob, "role" | "sequence">[]): ImageJob[] {
-    if (!this.store.project(projectId)) throw new Error("项目不存在");
+    if (projectId !== null && !this.store.project(projectId)) throw new Error("项目不存在");
     if (runId && this.store.run(runId)?.projectId !== projectId) throw new Error("图片关联任务与项目不匹配");
     if (!prompts.length || prompts.length > (runId ? 20 : 12) || prompts.some((prompt) => !prompt.trim() || prompt.length > 6000)) {
       throw new Error(`每次可提交 1–${runId ? 20 : 12} 条不超过 6000 字的提示词`);
@@ -55,7 +59,7 @@ export class ImageQueue {
       const maskSize = pngDimensions(maskBytes);
       if (maskBytes.length > 4_000_000 || sourceSize.width !== maskSize.width || sourceSize.height !== maskSize.height ||
         ![4, 6].includes(maskSize.colorType)) throw new Error("遮罩须小于 4 MB、含 Alpha 通道且与首图同尺寸");
-      const directory = join(this.dataDir, "masks", projectId);
+      const directory = join(this.dataDir, "masks", projectId ?? "_standalone");
       mkdirSync(directory, { recursive: true, mode: 0o700 });
       maskPath = join(directory, `${randomUUID()}.png`);
       writeFileSync(maskPath, maskBytes, { mode: 0o600 });
@@ -96,7 +100,7 @@ export class ImageQueue {
     if (!info.isFile() || info.size > 30_000_000) throw new Error("图片文件无效或过大");
     const format = extname(job.outputPath).toLowerCase();
     const mimeType = format === ".png" ? "image/png" : format === ".jpg" ? "image/jpeg" : format === ".webp" ? "image/webp" : null;
-    const root = realpathSync(resolve(this.dataDir, "images", job.projectId)) + sep;
+    const root = realpathSync(imageDirectory(this.dataDir, job.projectId)) + sep;
     if (!mimeType || !realpathSync(job.outputPath).startsWith(root)) throw new Error("图片路径或格式无效");
     return job.outputPath;
   }
@@ -114,7 +118,7 @@ export class ImageQueue {
           const env = new LocalConfig(this.dataDir).imageEnvironment();
           const format = env.OPS_IMAGE_FORMAT || "png";
           if (!["png", "jpeg", "webp"].includes(format)) throw new Error("OPS_IMAGE_FORMAT 仅支持 png、jpeg、webp");
-          const directory = join(this.dataDir, "images", job.projectId);
+          const directory = imageDirectory(this.dataDir, job.projectId);
           const out = join(directory, `${job.id}.${format === "jpeg" ? "jpg" : format}`);
           await generateImage({ prompt: job.prompt, inputs: job.inputs, mask: job.maskPath || undefined,
             out, env, signal: controller.signal, fetcher: this.fetcher });

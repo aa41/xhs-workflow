@@ -7,7 +7,7 @@ import { parse as parseYaml } from "yaml";
 import type { Project, ServiceNotification, ServiceRequest, ServiceResponse, SkillEntry, TaskRun } from "../shared/contracts.js";
 import type { AgentRunner } from "./agent.js";
 import { LocalConfig } from "./config.js";
-import { ImageQueue, reference } from "./images.js";
+import { ImageQueue, imageDirectory, reference } from "./images.js";
 import { Store } from "./db.js";
 import { commitCountSince, inspectRepository, recentCommits } from "./git.js";
 import { imageStyle, validatedCoverCount } from "../shared/image-styles.js";
@@ -51,6 +51,13 @@ function input(payload: unknown): Record<string, unknown> {
 function required(value: unknown, label: string, max = 4000): string {
   if (typeof value !== "string" || !value.trim() || value.length > max) throw new Error(`${label}无效`);
   return value.trim();
+}
+
+function imageProjectId(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  const id = required(value, "项目 ID", 80);
+  if (!store.project(id)) throw new Error("项目不存在");
+  return id;
 }
 
 async function projectById(id: string): Promise<Project> {
@@ -308,7 +315,7 @@ async function dispatch(method: string, payload: unknown): Promise<unknown> {
       const prompts = Array.isArray(data.prompts) ? data.prompts : [];
       const inputs = Array.isArray(data.inputs) ? data.inputs : [];
       if (prompts.some((item) => typeof item !== "string") || inputs.some((item) => typeof item !== "string")) throw new Error("生图参数无效");
-      return imageQueue.enqueue(required(data.projectId, "项目 ID"), prompts as string[], inputs as string[],
+      return imageQueue.enqueue(imageProjectId(data.projectId), prompts as string[], inputs as string[],
         typeof data.maskData === "string" ? data.maskData : undefined);
     }
     case "images.cancel": imageQueue.cancel(required(data.id, "图片任务 ID", 80)); return true;
@@ -316,17 +323,14 @@ async function dispatch(method: string, payload: unknown): Promise<unknown> {
     case "images.preview": return imageQueue.preview(required(data.id, "图片任务 ID", 80));
     case "images.reveal": return imageQueue.outputPath(required(data.id, "图片任务 ID", 80));
     case "images.projectFolder": {
-      const projectId = required(data.projectId, "项目 ID", 80);
-      if (!store.project(projectId)) throw new Error("项目不存在");
-      const directory = join(dataDir, "images", projectId);
+      const directory = imageDirectory(dataDir, imageProjectId(data.projectId));
       mkdirSync(directory, { recursive: true, mode: 0o700 });
       return directory;
     }
     case "images.revealGenerated": {
-      const projectId = required(data.projectId, "项目 ID", 80);
-      if (!store.project(projectId)) throw new Error("项目不存在");
+      const projectId = imageProjectId(data.projectId);
       const path = resolve(required(data.path, "图片路径", 2000));
-      const root = resolve(dataDir, "images", projectId);
+      const root = imageDirectory(dataDir, projectId);
       if (!path.startsWith(root + sep) || !/\.(png|jpg|webp)$/i.test(path) || !existsSync(path) ||
         !lstatSync(path).isFile() || !realpathSync(path).startsWith(realpathSync(root) + sep)) {
         throw new Error("图片路径无效或文件已被清理");
@@ -334,16 +338,14 @@ async function dispatch(method: string, payload: unknown): Promise<unknown> {
       return path;
     }
     case "images.generate": {
-      const projectId = required(data.projectId, "项目 ID");
-      if (!store.project(projectId)) throw new Error("项目不存在");
+      const projectId = imageProjectId(data.projectId);
       const image = await (await runner()).generateImage(projectId, required(data.provider, "Provider", 80),
         required(data.model, "生图模型", 200), required(data.prompt, "生图提示词", 3000));
       notify("images.generated", { projectId, path: image.path });
       return image;
     }
     case "images.responses": {
-      const projectId = required(data.projectId, "项目 ID");
-      if (!store.project(projectId)) throw new Error("项目不存在");
+      const projectId = imageProjectId(data.projectId);
       const inputs = Array.isArray(data.inputs) ? data.inputs : [];
       if (inputs.length > 8 || inputs.some((path) => typeof path !== "string" || path.length > 2000)) throw new Error("参考图列表无效");
       const image = await (await runner()).generateResponsesImage(projectId, required(data.prompt, "生图提示词", 6000), inputs as string[]);

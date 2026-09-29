@@ -91,3 +91,28 @@ test("旧数据库迁移封面关联与审校轮次字段", () => {
   assert.equal(store.artifacts()[0].publishableMarkdown, null);
   store.close();
 });
+
+test("旧图片表迁移为可选项目，保留原记录且独立图片不随项目删除", () => {
+  const path = join(directory, "images-legacy.sqlite");
+  const database = new DatabaseSync(path);
+  database.exec(`CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL, strategy TEXT NOT NULL DEFAULT '', last_processed_sha TEXT);
+    CREATE TABLE image_jobs (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    prompt TEXT NOT NULL, inputs TEXT NOT NULL, mask_path TEXT, run_id TEXT,
+    role TEXT NOT NULL DEFAULT 'independent', sequence INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL, output_path TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    INSERT INTO projects (id,name,path,created_at) VALUES ('old-project','Legacy','/tmp/image-legacy','2026-01-01');
+    INSERT INTO image_jobs (id,project_id,prompt,inputs,status,created_at,updated_at)
+      VALUES ('old-image','old-project','原项目图片','[]','completed','2026-01-01','2026-01-01');`);
+  database.close();
+  const store = new Store(path);
+  assert.equal(store.imageJob("old-image")?.projectId, "old-project");
+  const [standalone] = store.addImageJobs(null, ["独立图片"], [], null);
+  store.removeProject("old-project");
+  assert.equal(store.imageJob("old-image"), undefined);
+  assert.equal(store.imageJob(standalone.id)?.projectId, null);
+  store.close();
+  const reopened = new Store(path);
+  assert.equal(reopened.imageJob(standalone.id)?.prompt, "独立图片");
+  reopened.close();
+});

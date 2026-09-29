@@ -143,7 +143,7 @@ function App() {
   const [imageProjectId, setImageProjectId] = useState("");
   const [imagePrompt, setImagePrompt] = useState("");
   const [selectedImageModel, setSelectedImageModel] = useState("");
-  const [imageResult, setImageResult] = useState<{ path: string; dataUrl: string; projectId: string; projectName: string; prompt: string; jobId?: string } | null>(null);
+  const [imageResult, setImageResult] = useState<{ path: string; dataUrl: string; projectId: string | null; projectName: string; prompt: string; jobId?: string } | null>(null);
   const [imageEngine, setImageEngine] = useState<"responses" | "openrouter">("responses");
   const [imageInputs, setImageInputs] = useState<string[]>([]);
   const [imageReference, setImageReference] = useState<{ dataUrl: string; mimeType: string; width?: number; height?: number } | null>(null);
@@ -253,7 +253,6 @@ function App() {
       }
     }
     if (view === "images" && imageProjectId && !projects.some(item => item.id === imageProjectId)) setImageProjectId("");
-    else if (view === "images" && projects.length === 1 && !imageProjectId) setImageProjectId(projects[0].id);
   }, [view, artifacts, selectedArtifactId, projectFilter, projects, imageProjectId]);
 
   useEffect(() => {
@@ -293,7 +292,6 @@ function App() {
 
   useEffect(() => { if (projects.length && !projects.some(project => project.id === runProjectId)) setRunProjectId(projects[0].id); }, [projects, runProjectId]);
   useEffect(() => { if (projects.length && !projects.some(project => project.id === scheduleProjectId)) setScheduleProjectId(projects[0].id); }, [projects, scheduleProjectId]);
-  useEffect(() => { if (projects.length && !projects.some(project => project.id === imageProjectId)) setImageProjectId(projects[0].id); }, [projects, imageProjectId]);
   useEffect(() => { if (imageModels.length && !imageModels.some(item => `${item.provider}::${item.id}` === selectedImageModel)) setSelectedImageModel(`${imageModels[0].provider}::${imageModels[0].id}`); }, [imageModels, selectedImageModel]);
   useEffect(() => {
     setImageMask(null);
@@ -308,7 +306,9 @@ function App() {
   useEffect(() => { if ((models.length || imageModels.length) && !keyProvider) setKeyProvider((models[0] ?? imageModels[0]).provider); }, [models, imageModels, keyProvider]);
   useEffect(() => { if (notice) { const timer = window.setTimeout(() => setNotice(null), 6000); return () => window.clearTimeout(timer); } }, [notice]);
 
-  const projectName = useCallback((id: string) => projects.find(project => project.id === id)?.name ?? "已移除项目", [projects]);
+  const projectName = useCallback((id: string | null) => id === null ? "独立图片" : projects.find(project => project.id === id)?.name ?? "已移除项目", [projects]);
+  const imageScopeId = imageProjectId || null;
+  const visibleImageJobs = imageJobs.filter(job => job.projectId === imageScopeId).slice(0, 50);
   const model = models.find(item => `${item.provider}::${item.id}` === selectedModel);
   const reviewModel = models.find(item => `${item.provider}::${item.id}` === selectedReviewModel);
   const imageModel = imageModels.find(item => `${item.provider}::${item.id}` === selectedImageModel);
@@ -424,7 +424,7 @@ function App() {
 
   async function generateImage(event: FormEvent) {
     event.preventDefault();
-    if (!imageProjectId || !imagePrompt.trim() || (imageEngine === "openrouter" && !imageModel)) return;
+    if (!imagePrompt.trim() || (imageEngine === "openrouter" && !imageModel)) return;
     if (imageEngine === "responses") {
       const prompts = imagePrompt.split(/\n+/).map((item) => item.trim()).filter(Boolean);
       let batch: string[];
@@ -435,16 +435,16 @@ function App() {
         return;
       }
       await perform("enqueue-images", () => call("images.enqueue", {
-        projectId: imageProjectId, prompts: batch, inputs: imageInputs, maskData: imageMask,
+        projectId: imageScopeId, prompts: batch, inputs: imageInputs, maskData: imageMask,
       }), `已加入 ${batch.length} 个生图任务；按顺序执行，可在下方查看进度。`);
       return;
     }
     setImageResult(null);
     await perform("generate-image", async () => {
       const result = await call<{ path: string; dataUrl: string }>("images.generate", {
-        projectId: imageProjectId, prompt: imageStyleId ? buildStyledImagePrompt(imagePrompt.trim(), imageStyleId) : imagePrompt.trim(), provider: imageModel?.provider, model: imageModel?.id,
+        projectId: imageScopeId, prompt: imageStyleId ? buildStyledImagePrompt(imagePrompt.trim(), imageStyleId) : imagePrompt.trim(), provider: imageModel?.provider, model: imageModel?.id,
       });
-      setImageResult({ ...result, projectId: imageProjectId, projectName: projectName(imageProjectId), prompt: imagePrompt.trim() });
+      setImageResult({ ...result, projectId: imageScopeId, projectName: projectName(imageScopeId), prompt: imagePrompt.trim() });
     }, "图片已生成，可在下方预览。");
   }
 
@@ -507,19 +507,19 @@ function App() {
 
         {view === "images" && <>
           <section className="panel image-panel">
-            <div className="image-panel-heading"><span className="image-panel-icon"><Icon name="image" size={21} /></span><div><span className="section-kicker">IMAGE STUDIO / LOCAL QUEUE</span><h2>生图工作台</h2><p>无需修改或启动文案任务。选择一个项目存放图片，输入描述即可生成；也可上传参考图并圈选修改区域。</p></div></div>
-            <button type="button" className="button button-outline image-folder-action" disabled={!imageProjectId} onClick={() => perform("open-image-folder", () => call("images.projectFolder", { projectId: imageProjectId }), "已打开项目图片目录。")}>打开项目图片目录</button>
+            <div className="image-panel-heading"><span className="image-panel-icon"><Icon name="image" size={21} /></span><div><span className="section-kicker">IMAGE STUDIO / LOCAL QUEUE</span><h2>生图工作台</h2><p>无需 Git 项目或文案任务。直接生成并保存为独立图片，也可选择关联项目；支持参考图与局部修改。</p></div></div>
+            <button type="button" className="button button-outline image-folder-action" onClick={() => perform("open-image-folder", () => call("images.projectFolder", { projectId: imageScopeId }), "已打开图片目录。")}>打开图片目录</button>
             {listError("images")}{listError("imageJobs")}
             <form className="image-composer" onSubmit={generateImage}>
-              <div className="image-form-fields"><label>关联项目<select value={imageProjectId} onChange={event => setImageProjectId(event.target.value)} required><option value="">选择项目</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label>生成引擎<select value={imageEngine} onChange={event => setImageEngine(event.target.value as "responses" | "openrouter")}><option value="responses">Responses · 队列 / 局部编辑</option><option value="openrouter">OpenRouter · 单张生成</option></select></label></div>
+              <div className="image-form-fields"><label>保存位置（可选）<select value={imageProjectId} onChange={event => setImageProjectId(event.target.value)}><option value="">独立图片 · 不关联项目</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select><small className="field-hint">不选项目时保存在本机独立目录，仍可预览、重试和定位文件。</small></label><label>生成引擎<select value={imageEngine} onChange={event => setImageEngine(event.target.value as "responses" | "openrouter")}><option value="responses">Responses · 队列 / 局部编辑</option><option value="openrouter">OpenRouter · 单张生成</option></select></label></div>
               {imageEngine === "openrouter" ? <label className="image-model-field">图像模型<select value={selectedImageModel} onChange={event => setSelectedImageModel(event.target.value)} required><option value="">选择模型</option>{imageModels.map(item => <option key={`${item.provider}::${item.id}`} value={`${item.provider}::${item.id}`}>{item.provider} / {item.name}</option>)}</select></label> : <div className="image-reference-zone"><div className="image-zone-copy"><strong>参考图与局部修改</strong><span>首张 PNG 可直接涂抹遮罩；透明区域由 Responses 工具重绘。</span></div><div className="image-inputs"><button type="button" className="button button-outline" onClick={pickImage} disabled={imageInputs.length >= 8}><Icon name="plus" size={15} />添加参考图</button>{imageInputs.map(path => <span key={path} title={path}>{path.split(/[\\/]/).at(-1)} <button type="button" aria-label={`移除 ${path}`} onClick={() => setImageInputs(current => current.filter(item => item !== path))}>×</button></span>)}</div>{imageReference?.mimeType === "image/png" && imageReference.width && imageReference.height && <MaskEditor key={imageInputs[0]} source={{ dataUrl: imageReference.dataUrl, width: imageReference.width, height: imageReference.height }} onChange={setImageMask} />}{imageReference && imageReference.mimeType !== "image/png" && <p className="field-hint">第一张参考图需为 PNG 才能绘制遮罩；普通编辑仍支持 JPEG / WebP。</p>}</div>}
               <div className="image-style-field"><label htmlFor="image-style">视觉风格</label><select id="image-style" value={imageStyleId} onChange={event => setImageStyleId(event.target.value)}><option value="">不套用风格</option>{imageStyles.map(style => <option key={style.id} value={style.id}>{style.name}</option>)}</select><p className="field-hint">{imageStyles.find(style => style.id === imageStyleId)?.description || "直接使用你输入的画面描述。"} 预设会补充构图、材质与真实性约束。</p>{imageStyleId && <details className="style-preview"><summary>查看风格指令</summary><p>{imageStyles.find(style => style.id === imageStyleId)?.direction}</p></details>}</div>
               <div className="image-prompt-heading"><label htmlFor="image-prompt">画面描述</label>{imageEngine === "responses" && <span>每行一个任务 · 最多 12 张</span>}</div>
               <textarea id="image-prompt" value={imagePrompt} onChange={event => setImagePrompt(event.target.value)} placeholder={imageEngine === "responses" ? "独立开发者工作日志封面，留出标题空间…\n同主题的另一种构图，突出产品界面…" : "描述画面内容、风格与用途…"} rows={4} required />
-              <div className="image-form-footer">{imageEngine === "responses" ? <label>每条生成<select value={imageVariants} onChange={event => setImageVariants(Number(event.target.value))}><option value={1}>1 张</option><option value={2}>2 张</option><option value={3}>3 张</option><option value={4}>4 张</option></select></label> : <span>OpenRouter 使用已有的图像模型配置。</span>}<div><span className="field-hint">加入队列后即开始调用模型，可能产生费用。</span><button className="button button-primary" disabled={!imageProjectId || (imageEngine === "openrouter" && !imageModel) || !imagePrompt.trim() || busy === "generate-image" || busy === "enqueue-images"}><Icon name="spark" size={16} />{busy === "generate-image" || busy === "enqueue-images" ? "处理中…" : imageEngine === "responses" ? "加入并执行" : "生成图片"}</button></div></div>
+              <div className="image-form-footer">{imageEngine === "responses" ? <label>每条生成<select value={imageVariants} onChange={event => setImageVariants(Number(event.target.value))}><option value={1}>1 张</option><option value={2}>2 张</option><option value={3}>3 张</option><option value={4}>4 张</option></select></label> : <span>OpenRouter 使用已有的图像模型配置。</span>}<div><span className="field-hint">加入队列后即开始调用模型，可能产生费用。</span><button className="button button-primary" disabled={(imageEngine === "openrouter" && !imageModel) || !imagePrompt.trim() || busy === "generate-image" || busy === "enqueue-images"}><Icon name="spark" size={16} />{busy === "generate-image" || busy === "enqueue-images" ? "处理中…" : imageEngine === "responses" ? "加入并执行" : "生成图片"}</button></div></div>
             </form>
-            {imageEngine === "responses" && <div className="image-queue"><div className="image-queue-heading"><div><span className="section-kicker">PRODUCTION QUEUE</span><h3>任务队列</h3></div><span>{imageJobs.filter(job => job.projectId === imageProjectId && ["queued", "running"].includes(job.status)).length} 个待处理</span></div>{imageJobs.filter(job => job.projectId === imageProjectId).slice(0, 50).length ? imageJobs.filter(job => job.projectId === imageProjectId).slice(0, 50).map(job => <article className="image-job" key={job.id}><span className={`image-job-status ${job.status}`} /><div><strong>{job.role === "content" ? `内容配图 ${job.sequence}` : job.role === "cover" ? `封面 ${job.sequence}` : job.prompt}</strong><small>{job.maskPath ? "局部遮罩编辑" : job.inputs.length ? "参考图编辑" : "新图生成"} · {dateTime(job.createdAt)} · {job.status === "queued" ? "排队中" : job.status === "running" ? "生成中" : job.status === "completed" ? "已完成" : job.status === "aborted" ? "已取消" : "失败"}</small>{job.error && <p className="inline-error">{job.error}</p>}</div><div className="image-job-actions">{job.status === "completed" && <><button className="button button-outline" onClick={() => previewImage(job)}>预览</button><button className="button button-outline" onClick={() => revealImage(job)}>定位文件</button></>}{["failed", "aborted"].includes(job.status) && <button className="button button-outline" onClick={() => perform(`retry-${job.id}`, () => call("images.retry", { id: job.id }), "已重新加入队列。")}>重试</button>}{["queued", "running"].includes(job.status) && <button className="button button-quiet" onClick={() => perform(`cancel-${job.id}`, () => call("images.cancel", { id: job.id }), "已请求取消。")}>取消</button>}</div></article>) : <p className="quiet-message">当前项目尚无图片任务。填写描述后加入队列，运行记录会保留。</p>}</div>}
-            {imageResult?.projectId === imageProjectId && <div className="image-result"><div><strong>图片预览</strong><span>{imageResult.projectName}</span></div>{imageResult.dataUrl?.startsWith("data:image/") ? <img src={imageResult.dataUrl} alt={imageResult.prompt} /> : <p className="quiet-message">预览数据不可用，图片已保存至下方路径。</p>}<code title={imageResult.path}>{imageResult.path}</code><button className="button button-outline" onClick={() => imageResult.jobId ? void perform("reveal-preview", () => call("images.reveal", { id: imageResult.jobId }), "已定位图片文件。") : void perform("reveal-generated", () => call("images.revealGenerated", { projectId: imageResult.projectId, path: imageResult.path }), "已定位图片文件。")}>在文件夹中定位图片</button></div>}
+            {imageEngine === "responses" && <div className="image-queue"><div className="image-queue-heading"><div><span className="section-kicker">PRODUCTION QUEUE</span><h3>任务队列</h3></div><span>{visibleImageJobs.filter(job => ["queued", "running"].includes(job.status)).length} 个待处理</span></div>{visibleImageJobs.length ? visibleImageJobs.map(job => <article className="image-job" key={job.id}><span className={`image-job-status ${job.status}`} /><div><strong>{job.role === "content" ? `内容配图 ${job.sequence}` : job.role === "cover" ? `封面 ${job.sequence}` : job.prompt}</strong><small>{job.maskPath ? "局部遮罩编辑" : job.inputs.length ? "参考图编辑" : "新图生成"} · {dateTime(job.createdAt)} · {job.status === "queued" ? "排队中" : job.status === "running" ? "生成中" : job.status === "completed" ? "已完成" : job.status === "aborted" ? "已取消" : "失败"}</small>{job.error && <p className="inline-error">{job.error}</p>}</div><div className="image-job-actions">{job.status === "completed" && <><button className="button button-outline" onClick={() => previewImage(job)}>预览</button><button className="button button-outline" onClick={() => revealImage(job)}>定位文件</button></>}{["failed", "aborted"].includes(job.status) && <button className="button button-outline" onClick={() => perform(`retry-${job.id}`, () => call("images.retry", { id: job.id }), "已重新加入队列。")}>重试</button>}{["queued", "running"].includes(job.status) && <button className="button button-quiet" onClick={() => perform(`cancel-${job.id}`, () => call("images.cancel", { id: job.id }), "已请求取消。")}>取消</button>}</div></article>) : <p className="quiet-message">此保存位置尚无图片任务。填写描述后加入队列，运行记录会保留。</p>}</div>}
+            {imageResult?.projectId === imageScopeId && <div className="image-result"><div><strong>图片预览</strong><span>{imageResult.projectName}</span></div>{imageResult.dataUrl?.startsWith("data:image/") ? <img src={imageResult.dataUrl} alt={imageResult.prompt} /> : <p className="quiet-message">预览数据不可用，图片已保存至下方路径。</p>}<code title={imageResult.path}>{imageResult.path}</code><button className="button button-outline" onClick={() => imageResult.jobId ? void perform("reveal-preview", () => call("images.reveal", { id: imageResult.jobId }), "已定位图片文件。") : void perform("reveal-generated", () => call("images.revealGenerated", { projectId: imageResult.projectId, path: imageResult.path }), "已定位图片文件。")}>在文件夹中定位图片</button></div>}
           </section>
         </>}
 

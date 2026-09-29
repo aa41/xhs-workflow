@@ -103,6 +103,36 @@ test("重启后运行项标失败、排队项恢复，并保留遮罩", async ()
   reopened.close();
 });
 
+test("无 Git 项目可生成、遮罩编辑、预览和重试，并保留独立图片目录", async () => {
+  const dataDir = join(directory, "standalone");
+  const store = new Store(join(dataDir, "data.sqlite"));
+  const source = join(dataDir, "source.png");
+  writeFileSync(source, png);
+  new LocalConfig(dataDir).setEnvironment("OPS_IMAGE_API_KEY", "test-key");
+  let attempts = 0;
+  const fetcher: typeof fetch = async () => {
+    attempts++;
+    if (attempts === 1) return new Response("temporary", { status: 503 });
+    return new Response(JSON.stringify({ output: [{ type: "image_generation_call", result: png.toString("base64") }] }), { status: 200 });
+  };
+  const queue = new ImageQueue(store, dataDir, () => {}, fetcher);
+  const [first] = queue.enqueue(null, ["独立生图"], [source], `data:image/png;base64,${png.toString("base64")}`);
+  await until(() => store.imageJob(first.id)?.status === "failed");
+  assert.equal(first.projectId, null);
+  assert.equal(store.imageJob(first.id)?.projectId, null);
+  assert.match(first.maskPath!, /masks\/_standalone\//);
+  const [retried] = queue.retry(first.id);
+  await until(() => store.imageJob(retried.id)?.status === "completed");
+  assert.equal(retried.projectId, null);
+  assert.match(queue.outputPath(retried.id), /images\/_standalone\//);
+  assert.deepEqual(readFileSync(queue.preview(retried.id).path), png);
+  store.close();
+  const reopened = new Store(join(dataDir, "data.sqlite"));
+  assert.equal(reopened.imageJob(retried.id)?.projectId, null);
+  assert.equal(reopened.imageJob(retried.id)?.status, "completed");
+  reopened.close();
+});
+
 test("运行中取消中断请求，后续任务继续执行", async () => {
   const dataDir = join(directory, "abort");
   const store = new Store(join(dataDir, "data.sqlite"));

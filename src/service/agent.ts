@@ -11,7 +11,7 @@ import { LocalConfig } from "./config.js";
 import { generateImage as responsesImage } from "../../resources/skills/responses-imagegen/scripts/image.mjs";
 import { parseReviewDecision, reviewWithRevisions } from "./review.js";
 import { parseImagePlan, plannedImagePrompts, IMAGE_PLAN_END, IMAGE_PLAN_START } from "../shared/image-plan.js";
-import { ImageQueue } from "./images.js";
+import { ImageQueue, imageDirectory } from "./images.js";
 import { selectSkillInstructions } from "./skills.js";
 import { extractPublishableMarkdown, hasPublishableTags, PUBLISHABLE_END, PUBLISHABLE_START } from "../shared/publishable.js";
 
@@ -44,7 +44,7 @@ export class AgentRunner {
     }));
   }
 
-  async generateImage(projectId: string, provider: string, modelId: string, prompt: string): Promise<{ path: string; dataUrl: string }> {
+  async generateImage(projectId: string | null, provider: string, modelId: string, prompt: string): Promise<{ path: string; dataUrl: string }> {
     const runtime = await this.imageRuntime();
     const model = runtime.getModel(provider, modelId);
     if (!model || !(await runtime.getAuth(provider))) {
@@ -55,15 +55,15 @@ export class AgentRunner {
     const image = result.output.find((entry) => entry.type === "image");
     if (!image || image.type !== "image") throw new Error("Provider 未返回图片");
     const extension = image.mimeType === "image/jpeg" ? "jpg" : image.mimeType === "image/webp" ? "webp" : "png";
-    const directory = join(this.dataDir, "images", projectId);
+    const directory = imageDirectory(this.dataDir, projectId);
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     const path = join(directory, `${randomUUID()}.${extension}`);
     writeFileSync(path, Buffer.from(image.data, "base64"), { mode: 0o600 });
     return { path, dataUrl: `data:${image.mimeType};base64,${image.data}` };
   }
 
-  async generateResponsesImage(projectId: string, prompt: string, inputs: string[] = []): Promise<{ path: string; dataUrl: string }> {
-    const directory = join(this.dataDir, "images", projectId);
+  async generateResponsesImage(projectId: string | null, prompt: string, inputs: string[] = []): Promise<{ path: string; dataUrl: string }> {
+    const directory = imageDirectory(this.dataDir, projectId);
     const environment = this.config.imageEnvironment();
     const format = environment.OPS_IMAGE_FORMAT || "png";
     if (!["png", "jpeg", "webp"].includes(format)) throw new Error("OPS_IMAGE_FORMAT 仅支持 png、jpeg、webp");

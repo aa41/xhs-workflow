@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { fork, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -65,7 +65,19 @@ test("服务进程提供 Skill 开发和清理预览 IPC", async () => {
   assert.equal(JSON.stringify(environment).includes("secret"), false);
   await assert.rejects(call("images.reveal", { id: "missing" }), /图片不存在/);
   await assert.rejects(call("images.revealGenerated", { projectId: "missing", path: "/tmp/image.png" }), /项目不存在/);
+  const standaloneFolder = await call<string>("images.projectFolder", {});
+  assert.equal(standaloneFolder, join(directory, "images", "_standalone"));
+  const standaloneImage = join(standaloneFolder, "test.png");
+  writeFileSync(standaloneImage, "sample");
+  assert.equal(await call<string>("images.revealGenerated", { path: standaloneImage }), standaloneImage);
+  await assert.rejects(call("images.revealGenerated", { path: join(directory, "workbench.sqlite") }), /图片路径无效/);
+  await assert.rejects(call("images.generate", { provider: "missing", model: "missing", prompt: "测试" }), /生图模型不可用/);
   await call("environment.remove", { name: "OPS_IMAGE_API_KEY" });
+  const [standaloneJob] = await call<{ id: string; projectId: string | null }[]>("images.enqueue", {
+    projectId: null, prompts: ["独立图片任务"], inputs: [],
+  });
+  assert.equal(standaloneJob.projectId, null);
+  assert((await call<{ id: string }[]>("images.jobs")).some((job) => job.id === standaloneJob.id));
   await call("providers.remove", { id: "test-relay" });
   const preview = await call<{ artifacts: number; events: number; files: number }>("cleanup.preview", { days: 30 });
   assert.deepEqual(preview, { artifacts: 0, events: 0, files: 0 });

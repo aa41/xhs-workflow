@@ -53,7 +53,7 @@ export class Store {
         output TEXT NOT NULL DEFAULT '', error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS image_jobs (
-        id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        id TEXT PRIMARY KEY, project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
         prompt TEXT NOT NULL, inputs TEXT NOT NULL, mask_path TEXT, run_id TEXT,
         role TEXT NOT NULL DEFAULT 'independent', sequence INTEGER NOT NULL DEFAULT 1,
         status TEXT NOT NULL, output_path TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -76,6 +76,25 @@ export class Store {
       this.database.exec("UPDATE image_jobs SET role='cover' WHERE run_id IS NOT NULL");
     }
     if (!imageColumns.includes("sequence")) this.database.exec("ALTER TABLE image_jobs ADD COLUMN sequence INTEGER NOT NULL DEFAULT 1");
+    if (this.database.prepare("PRAGMA table_info(image_jobs)").all().some((column) => column.name === "project_id" && column.notnull === 1)) {
+      this.database.exec("BEGIN");
+      try {
+        this.database.exec(`
+          CREATE TABLE image_jobs_migrated (
+            id TEXT PRIMARY KEY, project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+            prompt TEXT NOT NULL, inputs TEXT NOT NULL, mask_path TEXT, run_id TEXT,
+            role TEXT NOT NULL DEFAULT 'independent', sequence INTEGER NOT NULL DEFAULT 1,
+            status TEXT NOT NULL, output_path TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+          );
+          INSERT INTO image_jobs_migrated (id,project_id,prompt,inputs,mask_path,run_id,role,sequence,status,output_path,error,created_at,updated_at)
+            SELECT id,project_id,prompt,inputs,mask_path,run_id,role,sequence,status,output_path,error,created_at,updated_at
+            FROM image_jobs ORDER BY rowid;
+          DROP TABLE image_jobs;
+          ALTER TABLE image_jobs_migrated RENAME TO image_jobs;
+        `);
+        this.database.exec("COMMIT");
+      } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    }
     const subagentColumns = this.database.prepare("PRAGMA table_info(subagents)").all().map((column) => String(column.name));
     if (!subagentColumns.includes("attempt")) this.database.exec("ALTER TABLE subagents ADD COLUMN attempt INTEGER NOT NULL DEFAULT 1");
     this.database.prepare("UPDATE runs SET status='failed',error='后端重启中断了任务',updated_at=? WHERE status IN ('queued','running')")
@@ -199,14 +218,14 @@ export class Store {
   }
 
   private mapImageJob(row: Record<string, unknown>): ImageJob {
-    return { id: String(row.id), projectId: String(row.project_id), runId: row.run_id === null ? null : String(row.run_id),
+    return { id: String(row.id), projectId: row.project_id === null ? null : String(row.project_id), runId: row.run_id === null ? null : String(row.run_id),
       role: row.role as ImageJob["role"], sequence: Number(row.sequence), prompt: String(row.prompt),
       inputs: JSON.parse(String(row.inputs)) as string[], maskPath: row.mask_path === null ? null : String(row.mask_path),
       status: row.status as ImageJob["status"], outputPath: row.output_path === null ? null : String(row.output_path),
       error: row.error === null ? null : String(row.error), createdAt: String(row.created_at), updatedAt: String(row.updated_at) };
   }
 
-  addImageJobs(projectId: string, prompts: string[], inputs: string[], maskPath: string | null, runId: string | null = null,
+  addImageJobs(projectId: string | null, prompts: string[], inputs: string[], maskPath: string | null, runId: string | null = null,
     metadata?: Pick<ImageJob, "role" | "sequence">[]): ImageJob[] {
     const createdAt = now();
     const jobs = prompts.map((prompt, index) => ({ id: randomUUID(), projectId, runId, prompt, inputs: [...inputs], maskPath,

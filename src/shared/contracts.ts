@@ -85,7 +85,7 @@ export type SkillEntry = {
 };
 
 export type ModelEntry = { provider: string; id: string; name: string };
-export type ImageJob = { id: string; projectId: string; runId: string | null; role: "cover" | "content" | "independent"; sequence: number;
+export type ImageJob = { id: string; projectId: string | null; runId: string | null; role: "cover" | "content" | "independent"; sequence: number;
   prompt: string; inputs: string[]; maskPath: string | null;
   status: "queued" | "running" | "completed" | "failed" | "aborted"; outputPath: string | null;
   error: string | null; createdAt: string; updatedAt: string };
