@@ -34,15 +34,15 @@ type View = "dashboard" | "projects" | "runs" | "artifacts" | "images" | "skills
 type ListKey = "projects" | "runs" | "artifacts" | "schedules" | "skills" | "providers" | "images" | "imageJobs";
 type IconName = "overview" | "folder" | "activity" | "document" | "spark" | "calendar" | "settings" | "arrow" | "plus" | "refresh" | "chevron" | "play" | "stop" | "trash" | "external" | "check" | "clock" | "search" | "send" | "branch" | "bolt" | "menu" | "close" | "image";
 
-const nav: { view: View; label: string; icon: IconName; eyebrow: string; title: string; description: string }[] = [
-  { view: "dashboard", label: "总览", icon: "overview", eyebrow: "WORKSPACE / OVERVIEW", title: "工作台总览", description: "从仓库变化到任务交付，掌握每一步进展。" },
-  { view: "projects", label: "项目仓库", icon: "folder", eyebrow: "WORKSPACE / PROJECTS", title: "项目仓库", description: "连接代码仓库，检查提交并确定处理策略。" },
-  { view: "runs", label: "任务审计", icon: "activity", eyebrow: "WORKSPACE / RUNS", title: "任务审计", description: "启动写作与审校任务，查看执行链、纠偏和失败原因。" },
-  { view: "artifacts", label: "内容产物", icon: "document", eyebrow: "WORKSPACE / ARTIFACTS", title: "内容产物", description: "预览正式 Markdown 正文，核对依据与封面，再人工决定是否发布。" },
-  { view: "images", label: "独立生图", icon: "image", eyebrow: "WORKSPACE / IMAGE STUDIO", title: "独立生图", description: "无需发起文案任务。选择项目、描述画面即可生成或编辑图片。" },
-  { view: "skills", label: "技能库", icon: "spark", eyebrow: "WORKSPACE / SKILLS", title: "技能库", description: "管理工作流可使用的本地技能。" },
-  { view: "schedules", label: "定时计划", icon: "calendar", eyebrow: "WORKSPACE / SCHEDULES", title: "定时计划", description: "让重复任务按你的节奏自动运行。" },
-  { view: "settings", label: "设置", icon: "settings", eyebrow: "WORKSPACE / SETTINGS", title: "工作台设置", description: "维护后端服务、模型凭据与本地数据。" },
+const nav: { view: View; label: string; icon: IconName }[] = [
+  { view: "dashboard", label: "总览", icon: "overview" },
+  { view: "projects", label: "项目仓库", icon: "folder" },
+  { view: "runs", label: "任务审计", icon: "activity" },
+  { view: "artifacts", label: "内容产物", icon: "document" },
+  { view: "images", label: "独立生图", icon: "image" },
+  { view: "skills", label: "技能库", icon: "spark" },
+  { view: "schedules", label: "定时计划", icon: "calendar" },
+  { view: "settings", label: "设置", icon: "settings" },
 ];
 
 const paths: Record<IconName, ReactNode> = {
@@ -94,7 +94,7 @@ const runLabels: Record<TaskRun["status"], string> = { queued: "排队中", runn
 const backendLabels: Record<BackendStatus["state"], string> = { stopped: "未启动", starting: "启动中", running: "运行中", error: "异常" };
 
 function Empty({ icon, title, children, action }: { icon: IconName; title: string; children: ReactNode; action?: ReactNode }) {
-  return <div className="empty-state"><span className="empty-icon"><Icon name={icon} size={25} /></span><h3>{title}</h3><p>{children}</p>{action}</div>;
+  return <div className="empty-state"><span className="empty-icon"><Icon name={icon} size={25} /></span><h3>{title}</h3><div className="empty-copy">{children}</div>{action}</div>;
 }
 
 function SectionTitle({ label, title, aside }: { label: string; title: string; aside?: ReactNode }) {
@@ -344,7 +344,7 @@ function App() {
     finally { setBusy(null); }
   }
 
-  function navigate(next: View) { setView(next); setMobileNav(false); setProjectFilter(""); }
+  function navigate(next: View) { setView(next); setMobileNav(false); setProjectFilter(""); window.scrollTo(0, 0); }
   function openRun(runId: string) { setSelectedRunId(runId); navigate("runs"); }
   function startForProject(projectId: string) { setRunProjectId(projectId); navigate("runs"); window.requestAnimationFrame(() => document.getElementById("run-prompt")?.focus()); }
 
@@ -471,18 +471,16 @@ function App() {
 
   return <div className="app-shell">
     <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
-      <div className="brand"><div className="brand-mark"><span>i</span><span>o</span></div><div><strong>indie<span>ops</span></strong><small>独立创造者工作台</small></div><button className="mobile-close icon-button" onClick={() => setMobileNav(false)} aria-label="关闭导航"><Icon name="close" /></button></div>
+      <div className="brand"><div className="brand-mark" aria-hidden="true">io</div><div><strong>indie<span>ops</span></strong><small>独立创造者工作台</small></div><button className="mobile-close icon-button" onClick={() => setMobileNav(false)} aria-label="关闭导航"><Icon name="close" /></button></div>
       <div className="nav-caption">工作空间 <span>01 / {String(nav.length).padStart(2, "0")}</span></div>
-      <nav aria-label="主导航">{nav.map(item => <button key={item.view} className={`nav-item ${view === item.view ? "active" : ""}`} onClick={() => navigate(item.view)}><Icon name={item.icon} size={19} /><span>{item.label}</span>{item.view === "runs" && activeRuns.length > 0 && <span className="nav-count">{activeRuns.length}</span>}</button>)}</nav>
+      <nav aria-label="主导航">{nav.map(item => <button key={item.view} className={`nav-item ${view === item.view ? "active" : ""}`} aria-current={view === item.view ? "page" : undefined} title={item.label} onClick={() => navigate(item.view)}><Icon name={item.icon} size={19} /><span>{item.label}</span>{item.view === "runs" && activeRuns.length > 0 && <span className="nav-count">{activeRuns.length}</span>}</button>)}</nav>
       <div className="sidebar-bottom"><div className="sidebar-service"><span className={`service-light ${backend?.state ?? "stopped"}`} /><div><strong>本地服务</strong><small>{listErrors.backend ? "连接失败" : backend ? backendLabels[backend.state] : "检测中"}</small></div><button className="icon-button" title="刷新状态" aria-label="刷新服务状态" onClick={refreshBackend}><Icon name="refresh" size={16} /></button></div><div className="sidebar-foot">INDIEOPS <span>© 2026</span></div></div>
     </aside>
     {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} aria-label="关闭导航" />}
 
     <main className="main-area">
-      <header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="打开导航"><Icon name="menu" /></button><span className="breadcrumb">工作空间 <Icon name="chevron" size={13} /> {header.label}</span><div className="topbar-right"><span className="topbar-date">{new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date())}</span><span className="topbar-divider" /><span className="avatar">IO</span></div></header>
+      <header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="打开导航"><Icon name="menu" /></button><div className="breadcrumb"><span className="topbar-section">工作空间</span><Icon name="chevron" size={13} /><h1 className="topbar-current">{header.label}</h1></div><div className="topbar-right">{view !== "settings" && <div className="topbar-actions"><button className="button button-quiet" onClick={refreshAll} aria-label="刷新数据" title="刷新数据"><Icon name="refresh" size={15} /><span>刷新</span></button>{(view === "dashboard" || view === "projects") && <button className="button button-primary" onClick={addProject} disabled={busy === "pick-project"} aria-label={busy === "pick-project" ? "添加中" : "添加仓库"} title="添加仓库"><Icon name="plus" size={16} /><span>{busy === "pick-project" ? "添加中…" : "添加仓库"}</span></button>}</div>}<span className="topbar-date">{new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date())}</span><span className="topbar-divider" /><span className="avatar">IO</span></div></header>
       <div className={`page-content view-${view}`}>
-        <div className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" />{header.eyebrow}</div><h1>{header.title}<span className="heading-period">.</span></h1><p>{header.description}</p></div><div className="heading-actions">{view !== "settings" && <button className="button button-quiet" onClick={refreshAll} aria-label="刷新数据"><Icon name="refresh" size={16} />刷新</button>}{(view === "dashboard" || view === "projects") && <button className="button button-primary" onClick={addProject} disabled={busy === "pick-project"}><Icon name="plus" size={17} />{busy === "pick-project" ? "添加中…" : "添加仓库"}</button>}</div></div>
-
         {notice && <div className={`notice notice-${notice.kind}`} role="status"><Icon name={notice.kind === "error" ? "stop" : "check"} size={17} /><span>{notice.text}</span><button onClick={() => setNotice(null)} aria-label="关闭提示"><Icon name="close" size={15} /></button></div>}
         {loading && <div className="loading-bar" role="status">正在同步工作台数据…</div>}
         {view === "artifacts" && selectedArtifact && <div className="iteration-banner"><span>当前草稿可作为下一轮优化的上下文；所有产品事实仍会重新核对 Git 提交。</span><button className="button button-outline" onClick={() => { setRunProjectId(selectedArtifact.projectId); setParentRunId(selectedArtifact.runId); setPrompt("根据我的反馈优化上一轮草稿："); navigate("runs"); }}>基于此稿继续纠偏 <Icon name="arrow" size={16} /></button></div>}
