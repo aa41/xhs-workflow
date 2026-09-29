@@ -13,7 +13,7 @@ import { parseReviewDecision, reviewWithRevisions } from "./review.js";
 import { parseImagePlan, plannedImagePrompts, IMAGE_PLAN_END, IMAGE_PLAN_START } from "../shared/image-plan.js";
 import { ImageQueue } from "./images.js";
 import { selectSkillInstructions } from "./skills.js";
-import { extractPublishableMarkdown, PUBLISHABLE_END, PUBLISHABLE_START } from "../shared/publishable.js";
+import { extractPublishableMarkdown, hasPublishableTags, PUBLISHABLE_END, PUBLISHABLE_START } from "../shared/publishable.js";
 
 const redact = (text: string) => text
   .replace(/sk-[A-Za-z0-9_-]{12,}/g, "[REDACTED]")
@@ -127,8 +127,8 @@ export class AgentRunner {
       const coverCount = run.coverStyle ? run.coverCount ?? 1 : 0;
       const contentCount = run.contentImageCount ?? 0;
       const systems = {
-        writer: `你是独立开发者的小红书内容策划。只根据用户提供的 Git 证据撰写中文草稿；代码已提交不等于已发布或用户可用。不得编造效果、数据、用户反馈或平台规则。审校退回时按反馈精准修订，不能删除所有限定语来规避问题。\n严格将可供人工发布的 Markdown 正文单独放在 ${PUBLISHABLE_START} 和 ${PUBLISHABLE_END} 两行之间（各出现一次）；这一区域只含读者可见的标题与正文，不含 SHA、【哈希】引用、审校意见、标题候选、封面提示词或事实对照。区域外单独给出标题候选、事实与 commit SHA 对照；不要把取证标记放进面向小红书读者的正文。\n本任务需 ${coverCount} 张封面、${contentCount} 张内容配图。若总数大于零，在正文区域外用 ${IMAGE_PLAN_START} 与 ${IMAGE_PLAN_END} 两行包围严格的 JSON 数组。每张图单独一项；封面项示例：{"role":"cover","scene":"具体且不同的画面主体和场景","composition":"独立镜头角度与布局"}；内容配图项示例：{"role":"content","scene":"与某段正文对应的具体画面","composition":"区别于其他图的镜头与色彩","anchor":"正文中逐字摘录的片段"}。role 只能是 cover 或 content；scene 至少12字，composition 至少6字，内容配图 anchor 至少6字且必须原样出现在正式正文中；封面不需要 anchor。内容配图须分别锚定正文中不同的具体段落或句子，不重复同一主视觉；封面须提出不同视觉概念，而非只改编号或角度。只表达可核实内容或清楚的概念隐喻，不伪造界面截图、人物、指标、效果或上线状态。若不值得发帖，说明原因，不伪造正文。\n${instructions}`,
-        reviewer: "你是独立的事实和隐私审校 Agent。只根据 Git 证据审核正式正文、原稿和逐张图片方案中的可验证主张，检查私密信息、过度承诺和未证实的发布状态。首行必须是 APPROVED 或 REJECTED，后面用中文说明可操作的修正建议。差异可能被截断，无法证实的界面或效果须限定为代码状态。不能将代码提交推断成已经上线。正式正文不可包含 SHA 取证标记；图片方案须逐张核对画面概念与正文锚点，不能只改编号或角度，也不可伪造产品截图、数据或已上线状态。",
+        writer: `你是独立开发者的小红书内容策划。只根据用户提供的 Git 证据撰写中文草稿；代码已提交不等于已发布或用户可用。不得编造效果、数据、用户反馈或平台规则。审校退回时按反馈精准修订，不能删除所有限定语来规避问题。\n严格将可供人工发布的 Markdown 正文单独放在 ${PUBLISHABLE_START} 和 ${PUBLISHABLE_END} 两行之间（各出现一次）；这一区域只含读者可见的标题与正文，不含 SHA、【哈希】引用、审校意见、标题候选、封面提示词或事实对照。正文最后另起一行写 2–5 个不重复的话题标签，建议 3–5 个，例如「#独立开发者 #产品迭代 #开发日志」；每个标签以 # 紧贴主题词，标签之间用空格隔开，标签行后不要再写其他内容。优先覆盖实际主题、解决的问题及独立开发者视角；只用与已核实正文相符的具体词，不编造功能、上线状态、热门趋势或传播效果，不堆砌无关泛词。区域外单独给出标题候选、事实与 commit SHA 对照；不要把取证标记放进面向小红书读者的正文。\n本任务需 ${coverCount} 张封面、${contentCount} 张内容配图。若总数大于零，在正文区域外用 ${IMAGE_PLAN_START} 与 ${IMAGE_PLAN_END} 两行包围严格的 JSON 数组。每张图单独一项；封面项示例：{"role":"cover","scene":"具体且不同的画面主体和场景","composition":"独立镜头角度与布局"}；内容配图项示例：{"role":"content","scene":"与某段正文对应的具体画面","composition":"区别于其他图的镜头与色彩","anchor":"正文中逐字摘录的片段"}。role 只能是 cover 或 content；scene 至少12字，composition 至少6字，内容配图 anchor 至少6字且必须原样出现在正式正文中；封面不需要 anchor。内容配图须分别锚定正文中不同的具体段落或句子，不重复同一主视觉；封面须提出不同视觉概念，而非只改编号或角度。只表达可核实内容或清楚的概念隐喻，不伪造界面截图、人物、指标、效果或上线状态。若不值得发帖，说明原因，不伪造正文。\n${instructions}`,
+        reviewer: "你是独立的事实和隐私审校 Agent。只根据 Git 证据审核正式正文、原稿和逐张图片方案中的可验证主张，检查私密信息、过度承诺和未证实的发布状态。首行必须是 APPROVED 或 REJECTED，后面用中文说明可操作的修正建议。差异可能被截断，无法证实的界面或效果须限定为代码状态。不能将代码提交推断成已经上线。正式正文不可包含 SHA 取证标记；检查末尾话题标签与正文和证据是否相关，不得暗示未证实的功能、效果、上线或热度，无关标签须退回修订；图片方案须逐张核对画面概念与正文锚点，不能只改编号或角度，也不可伪造产品截图、数据或已上线状态。",
       };
       const runStage = async (role: "writer" | "reviewer", attempt: number, prompt: string): Promise<string> => {
         if (this.cancelled.has(run.id)) throw new Error("任务已中止");
@@ -184,7 +184,9 @@ export class AgentRunner {
           return output;
         },
         (candidate, attempt) => {
-          if (!extractPublishableMarkdown(candidate)) return Promise.resolve("REJECTED 请用指定的起止标记单独包围可发布 Markdown 正文；不得混入审校材料。");
+          const publishable = extractPublishableMarkdown(candidate);
+          if (!publishable) return Promise.resolve("REJECTED 请用指定的起止标记单独包围可发布 Markdown 正文；不得混入审校材料。");
+          if (!hasPublishableTags(publishable)) return Promise.resolve("REJECTED 正式正文末尾须单独一行提供 2–5 个不重复且与已核实内容相关的话题标签，格式如 #独立开发者 #产品迭代，标签之间用空格分隔；不要编造功能、上线或热度。");
           if ((coverCount + contentCount) && !parseImagePlan(candidate, coverCount, contentCount)) {
             return Promise.resolve(`REJECTED 图片方案必须在指定标记中提供严格 JSON，包含 ${coverCount} 张不同概念的封面和 ${contentCount} 张锚定不同正文片段的内容配图；每张独立描述 scene 和 composition。`);
           }

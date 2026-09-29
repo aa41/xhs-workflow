@@ -6,8 +6,8 @@ export function phoneCopyFromMarkdown(markdown: string): { title: string; body: 
   const title = (lines.find(line => /^#{1,3}\s/.test(line)) ?? lines[0] ?? "未命名笔记")
     .replace(/^#{1,6}\s*/, "").replace(/\*\*/g, "").slice(0, 80);
   const body = lines.filter(line => line !== lines.find(item => /^#{1,3}\s/.test(item)) && line !== title)
-    .join("\n\n").replace(/^#{1,6}\s*/gm, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/(?:\*\*|__|`)/g, "").slice(0, 1600);
+    .join("\n\n").replace(/^#{1,6}[ \t]+/gm, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/(?:\*\*|__|`)/g, "");
   return { title, body };
 }
 

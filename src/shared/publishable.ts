@@ -16,3 +16,11 @@ export function extractPublishableMarkdown(draft: string): string | null {
   const clean = cleanPublishableMarkdown(markdown);
   return clean && clean.length <= 20_000 ? clean : null;
 }
+
+export function hasPublishableTags(markdown: string): boolean {
+  const lastLine = cleanPublishableMarkdown(markdown).split("\n").at(-1)?.trim() ?? "";
+  const tags = lastLine.split(/\s+/);
+  return tags.length >= 2 && tags.length <= 5 &&
+    tags.every(tag => /^#[\p{L}\p{N}][\p{L}\p{N}_-]{1,19}$/u.test(tag)) &&
+    new Set(tags.map(tag => tag.toLocaleLowerCase())).size === tags.length;
+}
