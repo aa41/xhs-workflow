@@ -1,0 +1,58 @@
+{
+  "name": "indie-ops-workbench",
+  "version": "0.1.0",
+  "description": "Git-first desktop workbench for independent developer operations",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.mjs",
+  "scripts": {
+    "build": "npm run typecheck && node scripts/build.mjs && vite build",
+    "typecheck": "tsc --noEmit",
+    "dev": "npm run build && electron .",
+    "start": "electron .",
+    "test": "node scripts/build.mjs && node --import tsx --test tests/*.test.ts",
+    "package:mac": "npm run build && electron-builder --mac",
+    "package:win": "npm run build && electron-builder --win"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.87.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "dompurify": "^3.4.16",
+    "fflate": "^0.8.2",
+    "marked": "^18.0.14",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "electron": "44.4.5",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.28.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vite": "8.3.1"
+  },
+  "build": {
+    "appId": "dev.indieops.workbench",
+    "productName": "IndieOps Workbench",
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "resources/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
